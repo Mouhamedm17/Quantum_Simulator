@@ -12,6 +12,7 @@ Modes
 import warnings
 warnings.filterwarnings("ignore")
 
+import io
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -50,6 +51,22 @@ def draw_circuit(qc: QuantumCircuit, scale: float = 0.4, fold: int = -1) -> plt.
     """Render circuit with Qiskit's Matplotlib drawer."""
     fig = qc.draw(output="mpl", fold=fold, style="clifford", scale=scale)
     return fig
+
+
+def circuit_image_bytes(qc: QuantumCircuit, max_width_in: float = 9.0) -> bytes:
+    """
+    Draw the circuit, cap its width at max_width_in inches (preserving aspect
+    ratio), render to PNG bytes, and close the figure.  Use with st.image().
+    """
+    fig = qc.draw(output="mpl", fold=-1, style="clifford", scale=0.4)
+    w, h = fig.get_size_inches()
+    if w > max_width_in:
+        fig.set_size_inches(max_width_in, h * max_width_in / w)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight", dpi=110)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
 
 
 def counts_to_probs(counts: dict) -> dict:
@@ -332,11 +349,15 @@ def _ui_custom():
 
     if "gates" not in st.session_state:
         st.session_state.gates = []
+    if "cust_n" not in st.session_state:
+        st.session_state.cust_n = 3
 
     left, right = st.columns([1, 2])
 
     with left:
-        n = st.slider("Number of qubits", 1, 10, 3, key="cust_nq")
+        n = st.slider("Number of qubits", 1, 10,
+                      st.session_state.cust_n, key="cust_nq")
+        st.session_state.cust_n = n  # persist across tab switches
         st.markdown("---")
         st.subheader("Add a gate")
 
@@ -401,7 +422,7 @@ def _ui_custom():
         st.subheader("Circuit Diagram")
         qc = build_custom(n, st.session_state.gates)
         try:
-            st.pyplot(draw_circuit(qc))
+            st.image(circuit_image_bytes(qc), use_container_width=True)
         except Exception as e:
             st.error(f"Render error: {e}")
 
@@ -484,7 +505,7 @@ from **Alice** (q₀) to **Bob** (q₂) using a shared Bell pair and 2 classical
     with right:
         st.subheader("Circuit")
         try:
-            st.pyplot(draw_circuit(build_tele_display(theta, phi), scale=0.6, fold=-1))
+            st.image(circuit_image_bytes(build_tele_display(theta, phi)), use_container_width=True)
         except Exception as e:
             st.error(f"Render error: {e}")
 
@@ -607,7 +628,7 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
             qc_vis = QuantumCircuit(4)
             fh_trotter_step(qc_vis, J, U, dt)
             try:
-                st.pyplot(draw_circuit(qc_vis))
+                st.image(circuit_image_bytes(qc_vis), use_container_width=True)
             except Exception as e:
                 st.error(f"Render error: {e}")
 
