@@ -76,19 +76,36 @@ def counts_to_probs(counts: dict) -> dict:
 
 def plot_histogram(counts: dict, title: str = "Measurement Results") -> plt.Figure:
     probs = counts_to_probs(counts)
-    states, vals = zip(*probs.items()) if probs else ([], [])
+    n_states = len(probs)
+
+    if n_states > 64:
+        # Too many states to show individually — display top-32 by probability
+        # plus an "other" bucket, with a note
+        top_items = sorted(probs.items(), key=lambda x: -x[1])[:32]
+        other_p   = 1.0 - sum(v for _, v in top_items)
+        states = [k for k, _ in top_items]
+        vals   = [v for _, v in top_items]
+        if other_p > 1e-6:
+            states.append(f"… +{n_states-32} more")
+            vals.append(other_p)
+        note = f"(Showing top 32 of {n_states} states)"
+    else:
+        states, vals = zip(*probs.items()) if probs else ([], [])
+        note = ""
+
     fig, ax = plt.subplots(figsize=(max(8, len(states) * 0.55 + 2), 4))
     cmap = plt.cm.viridis(np.linspace(0.25, 0.85, len(states)))
     bars = ax.bar(states, vals, color=cmap, edgecolor="black", linewidth=0.5)
     ax.set_xlabel("Basis State", fontsize=12)
     ax.set_ylabel("Probability", fontsize=12)
-    ax.set_title(title, fontsize=14, fontweight="bold")
-    ax.set_ylim(0, 1.1)
+    full_title = f"{title}\n{note}" if note else title
+    ax.set_title(full_title, fontsize=13, fontweight="bold")
+    ax.set_ylim(0, max(vals) * 1.25 if vals else 1.1)
     plt.xticks(rotation=45, ha="right", fontsize=8)
     for bar, v in zip(bars, vals):
-        if v > 0.02:
-            ax.text(bar.get_x() + bar.get_width() / 2, v + 0.015,
-                    f"{v:.3f}", ha="center", va="bottom", fontsize=7)
+        if v > 0.01:
+            ax.text(bar.get_x() + bar.get_width() / 2, v + max(vals) * 0.01,
+                    f"{v:.4f}", ha="center", va="bottom", fontsize=7)
     plt.tight_layout()
     return fig
 
@@ -422,7 +439,7 @@ def _ui_custom():
         st.subheader("Circuit Diagram")
         qc = build_custom(n, st.session_state.gates)
         try:
-            st.image(circuit_image_bytes(qc), use_container_width=True)
+            st.pyplot(draw_circuit(qc))
         except Exception as e:
             st.error(f"Render error: {e}")
 
@@ -505,7 +522,7 @@ from **Alice** (q₀) to **Bob** (q₂) using a shared Bell pair and 2 classical
     with right:
         st.subheader("Circuit")
         try:
-            st.image(circuit_image_bytes(build_tele_display(theta, phi)), use_container_width=True)
+            st.pyplot(draw_circuit(build_tele_display(theta, phi)))
         except Exception as e:
             st.error(f"Render error: {e}")
 
@@ -579,9 +596,19 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
 
         J      = st.slider("Hopping J", 0.0, 3.0, 1.0, 0.05, key="fh_J")
         U      = st.slider("Interaction U", 0.0, 20.0, 0.0, 0.5, key="fh_U")
-        t_max  = float(st.slider("Max time τ_max", 0.1, 4 * float(np.pi),
-                                 float(np.pi), 0.1, format="%.2f", key="fh_t"))
-        n_steps = st.slider("Trotter steps", 20, 400, 100, 10, key="fh_n")
+
+        # Suggest a sensible t_max: for |1100⟩ with U>0, effective rate is J²/U
+        if U > 0 and J > 0:
+            t_suggested = float(np.pi * U / J**2)   # one Mott oscillation
+        elif J > 0:
+            t_suggested = float(np.pi / (2 * J))    # free-hopping peak
+        else:
+            t_suggested = float(np.pi)
+
+        t_max  = float(st.slider("Max time τ_max", 0.1, 120.0,
+                                 min(t_suggested, 120.0),
+                                 0.5, format="%.1f", key="fh_t"))
+        n_steps = st.slider("Trotter steps", 20, 600, 150, 10, key="fh_n")
 
         init = st.selectbox("Initial state", ["1000", "1100", "0101", "1010"],
                             key="fh_init")
@@ -628,7 +655,7 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
             qc_vis = QuantumCircuit(4)
             fh_trotter_step(qc_vis, J, U, dt)
             try:
-                st.image(circuit_image_bytes(qc_vis), use_container_width=True)
+                st.pyplot(draw_circuit(qc_vis))
             except Exception as e:
                 st.error(f"Render error: {e}")
 
