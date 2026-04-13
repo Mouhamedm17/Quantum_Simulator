@@ -46,7 +46,7 @@ def run_statevector(qc: QuantumCircuit) -> np.ndarray:
     return np.array(result.get_statevector())
 
 
-def draw_circuit(qc: QuantumCircuit, scale: float = 0.55, fold: int = 25) -> plt.Figure:
+def draw_circuit(qc: QuantumCircuit, scale: float = 0.4, fold: int = -1) -> plt.Figure:
     """Render circuit with Qiskit's Matplotlib drawer."""
     fig = qc.draw(output="mpl", fold=fold, style="clifford", scale=scale)
     return fig
@@ -484,7 +484,7 @@ from **Alice** (q₀) to **Bob** (q₂) using a shared Bell pair and 2 classical
     with right:
         st.subheader("Circuit")
         try:
-            st.pyplot(draw_circuit(build_tele_display(theta, phi), scale=0.7, fold=-1))
+            st.pyplot(draw_circuit(build_tele_display(theta, phi), scale=0.6, fold=-1))
         except Exception as e:
             st.error(f"Render error: {e}")
 
