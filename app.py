@@ -678,19 +678,25 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                     times, probs = simulate_fh(J, U, t_max, n_steps, init, track)
 
                     colors = ["royalblue", "tomato", "forestgreen", "purple"]
-                    fig, ax = plt.subplots(figsize=(10, 5))
+
+                    # For |1100> with large U, use two-panel layout
+                    if init == "1100" and U > 0:
+                        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10, 8),
+                                                       gridspec_kw={"height_ratios": [2, 1]})
+                    else:
+                        fig, ax = plt.subplots(figsize=(10, 5))
+                        ax2 = None
+
                     for (s, pa), col in zip(probs.items(), colors):
                         ax.plot(times, pa, label=labels.get(s, f"|{s}⟩"),
                                 color=col, lw=2)
 
-                    # π markers
+                    # π markers on main axis
                     for k in range(1, int(t_max / np.pi) + 2):
                         xv = k * np.pi
                         if xv <= t_max * 1.01:
-                            ax.axvline(xv, color="gray", ls="--",
-                                       lw=0.8, alpha=0.5)
-                            ax.text(xv, 1.04, f"{k}π",
-                                    ha="center", fontsize=8, color="gray")
+                            ax.axvline(xv, color="gray", ls="--", lw=0.8, alpha=0.5)
+                            ax.text(xv, 1.04, f"{k}π", ha="center", fontsize=8, color="gray")
 
                     ax.set_xlabel("Time τ  (ħ/J)", fontsize=13)
                     ax.set_ylabel("Probability", fontsize=13)
@@ -701,8 +707,39 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                         fontsize=13, fontweight="bold",
                     )
                     ax.set_ylim(-0.05, 1.12)
-                    ax.legend(fontsize=11)
+                    ax.legend(fontsize=10)
                     ax.grid(True, alpha=0.3)
+
+                    # Zoomed panel showing only single-occupancy states
+                    if ax2 is not None:
+                        single_occ_states = ["1001", "0110"]
+                        soc = {s: colors[i+2] for i, s in enumerate(single_occ_states)}
+                        for s, col in soc.items():
+                            if s in probs:
+                                ax2.plot(times, probs[s],
+                                         label=labels.get(s, f"|{s}⟩"),
+                                         color=col, lw=2)
+                        # set y-limit to slightly above the peak of single-occ states
+                        max_single = max(
+                            float(np.max(probs.get(s, [0]))) for s in single_occ_states
+                        )
+                        y_top = max(max_single * 1.4, 0.02)
+                        ax2.set_ylim(0, y_top)
+                        ax2.set_xlabel("Time τ  (ħ/J)", fontsize=12)
+                        ax2.set_ylabel("Probability", fontsize=12)
+                        ax2.set_title(
+                            "Zoomed: single-occupancy states  "
+                            f"(peak = {max_single:.4f}  —  "
+                            f"{'suppressed by Mott blockade' if U/J > 2 else 'intermediate hopping states'})",
+                            fontsize=11,
+                        )
+                        ax2.legend(fontsize=10)
+                        ax2.grid(True, alpha=0.3)
+                        for k in range(1, int(t_max / np.pi) + 2):
+                            xv = k * np.pi
+                            if xv <= t_max * 1.01:
+                                ax2.axvline(xv, color="gray", ls="--", lw=0.8, alpha=0.5)
+
                     plt.tight_layout()
                     st.pyplot(fig)
                     plt.close(fig)
