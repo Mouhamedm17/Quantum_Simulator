@@ -46,9 +46,9 @@ def run_statevector(qc: QuantumCircuit) -> np.ndarray:
     return np.array(result.get_statevector())
 
 
-def draw_circuit(qc: QuantumCircuit) -> plt.Figure:
+def draw_circuit(qc: QuantumCircuit, scale: float = 0.55, fold: int = 25) -> plt.Figure:
     """Render circuit with Qiskit's Matplotlib drawer."""
-    fig = qc.draw(output="mpl", fold=-1, style="clifford")
+    fig = qc.draw(output="mpl", fold=fold, style="clifford", scale=scale)
     return fig
 
 
@@ -112,7 +112,10 @@ def apply_gate(qc: QuantumCircuit, g: dict):
 def build_custom(n_qubits: int, gates: list) -> QuantumCircuit:
     qc = QuantumCircuit(n_qubits)
     for g in gates:
-        apply_gate(qc, g)
+        # Skip gates whose qubit indices exceed the current circuit size
+        # (can happen if the user reduces n after adding gates)
+        if all(q < n_qubits for q in g["qubits"]):
+            apply_gate(qc, g)
     return qc
 
 
@@ -481,9 +484,20 @@ from **Alice** (q₀) to **Bob** (q₂) using a shared Bell pair and 2 classical
     with right:
         st.subheader("Circuit")
         try:
-            st.pyplot(draw_circuit(build_tele_display(theta, phi)))
+            st.pyplot(draw_circuit(build_tele_display(theta, phi), scale=0.7, fold=-1))
         except Exception as e:
             st.error(f"Render error: {e}")
+
+        st.markdown("""
+**Classical feed-forward corrections** (applied to Bob's qubit q₂):
+
+| Measurement outcome | Correction applied to q₂ |
+|---|---|
+| q₁ = 1  (c₁ bit) | **X gate** — bit-flip correction |
+| q₀ = 1  (c₀ bit) | **Z gate** — phase-flip correction |
+
+The double-line wires in the diagram carry these classical bits from Alice's measurements to Bob's correction gates.
+        """)
 
         if run:
             st.subheader("Results")
@@ -557,6 +571,18 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
             "1010": "Site 1↑ + Site 2↑",
         }
         st.info(info.get(init, ""))
+
+        # Dynamic timescale guidance
+        if init == "1100" and J > 0:
+            t_rabi  = float(np.pi / (2 * J))          # free-hopping peak
+            t_mott  = float(np.pi * U / (2 * J**2)) if U > 0 else t_rabi
+            if U / J > 2:
+                st.warning(
+                    f"⚠️ **Mott regime** (U/J = {U/J:.1f}):  \n"
+                    f"Doublon tunneling is suppressed and slow.  \n"
+                    f"Set **τ_max ≥ {t_mott:.1f}** to see the oscillation  \n"
+                    f"(effective rate ~ J²/U = {J**2/U:.3f})."
+                )
 
         if init == "1000":
             track  = ["1000", "0010"]
@@ -645,20 +671,25 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                         ratio   = U / J if J > 0 else float("inf")
                         st.metric("Max doublon tunneling probability", f"{max_s2:.4f}")
                         st.metric("U/J ratio", f"{ratio:.2f}")
+
                         if ratio > 5:
+                            t_eff = J**2 / U if U > 0 else 0
                             st.success(
-                                "🔒 **Mott-insulator regime** (U/J ≫ 1):  "
-                                "Coulomb blockade strongly suppresses tunneling.  "
-                                "Electrons are energetically locked to their sites."
+                                f"🔒 **Mott-insulator regime** (U/J = {ratio:.1f} ≫ 1)  \n"
+                                f"Coulomb blockade suppresses doublon tunneling.  \n"
+                                f"Effective tunneling rate: J²/U ≈ **{t_eff:.3f}** (vs J = {J:.2f} at U=0).  \n"
+                                f"Expected oscillation period: ~**{np.pi/t_eff:.1f}** — "
+                                f"increase τ_max to see it."
                             )
                         elif ratio < 1:
+                            t_free = np.pi / (2 * J) if J > 0 else 0
                             st.success(
-                                "🔓 **Metallic / hopping-dominated regime** (U/J ≪ 1):  "
-                                "Free tunneling between sites."
+                                f"🔓 **Metallic regime** (U/J = {ratio:.2f} ≪ 1)  \n"
+                                f"Free doublon tunneling — peak transfer at τ ≈ **{t_free:.2f}**."
                             )
                         else:
                             st.info(
-                                "⚖️  **Crossover regime**:  "
+                                f"⚖️  **Crossover regime** (U/J = {ratio:.2f})  \n"
                                 "Competing kinetic and interaction energies."
                             )
 
