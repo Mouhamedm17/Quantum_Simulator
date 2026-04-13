@@ -14,6 +14,7 @@ warnings.filterwarnings("ignore")
 
 import io
 import numpy as np
+from scipy.linalg import expm as _expm
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -287,6 +288,35 @@ def fh_trotter_step(qc: QuantumCircuit, J: float, U: float, dt: float):
     qc.cx(2, 3)
 
 
+# ── Exact JW Hamiltonian (little-endian, matches Qiskit) ────────
+_I2 = np.eye(2, dtype=complex)
+_X  = np.array([[0,1],[1,0]], dtype=complex)
+_Y  = np.array([[0,-1j],[1j,0]], dtype=complex)
+_Z  = np.array([[1,0],[0,-1]], dtype=complex)
+
+def _kron4(A0, A1, A2, A3):
+    """Little-endian tensor product: index = q0 + 2q1 + 4q2 + 8q3."""
+    return np.kron(np.kron(np.kron(A3, A2), A1), A0)
+
+def _ann(j: int) -> np.ndarray:
+    """JW annihilation operator for qubit j (little-endian, 4 qubits)."""
+    ops = [_I2] * 4
+    for k in range(j):
+        ops[k] = _Z
+    ops[j] = (_X + 1j * _Y) / 2
+    return _kron4(*ops)
+
+def _build_fh_hamiltonian(J: float, U: float) -> np.ndarray:
+    """Return the exact 16×16 Fermi-Hubbard Hamiltonian matrix."""
+    cre = [_ann(j).conj().T for j in range(4)]
+    ann = [_ann(j)           for j in range(4)]
+    H_hop = -J * (cre[0]@ann[2] + cre[2]@ann[0] +
+                  cre[1]@ann[3] + cre[3]@ann[1])
+    n = [cre[j] @ ann[j] for j in range(4)]
+    H_U = U * (n[0] @ n[1] + n[2] @ n[3])
+    return H_hop + H_U
+
+
 def _state_to_idx(s: str) -> int:
     """Convert qubit-string 'q0q1q2q3' to little-endian integer index."""
     return sum(int(s[i]) * (2 ** i) for i in range(len(s)))
@@ -295,40 +325,36 @@ def _state_to_idx(s: str) -> int:
 def simulate_fh(J: float, U: float, t_max: float, n_steps: int,
                 init_state: str, track: list) -> tuple:
     """
-    Simulate Fermi-Hubbard dynamics using exact unitary evolution.
+    Simulate Fermi-Hubbard dynamics using EXACT matrix exponentiation.
 
-    Strategy: compute the 16×16 unitary of ONE Trotter step via
-    qiskit.quantum_info.Operator, then apply it n_steps times.
-    This is exact (no shot noise) and very fast for 4 qubits.
+    Builds the exact JW Hamiltonian via Jordan-Wigner, diagonalises it
+    once, then evolves the statevector as
+        |ψ(t)⟩ = V diag(e^{-iε_k t}) V† |ψ₀⟩
+    where V is the eigenvector matrix.  Zero Trotter error.
 
     Returns
     -------
     times  : np.ndarray  shape (n_steps+1,)
     probs  : dict[state_str -> np.ndarray of probabilities]
     """
-    dt = t_max / n_steps
+    H = _build_fh_hamiltonian(J, U)
+    evals, evecs = np.linalg.eigh(H)          # H = V diag(ε) V†
 
-    # Build Trotter-step unitary (16×16 complex matrix)
-    qc_step = QuantumCircuit(4)
-    fh_trotter_step(qc_step, J, U, dt)
-    U_mat = np.array(Operator(qc_step).data)
+    # Initial statevector
+    psi0 = np.zeros(16, dtype=complex)
+    psi0[_state_to_idx(init_state)] = 1.0
 
-    # Initial statevector (computational basis)
-    sv = np.zeros(16, dtype=complex)
-    sv[_state_to_idx(init_state)] = 1.0
+    # Project onto eigenbasis once
+    coeffs = evecs.conj().T @ psi0             # shape (16,)
 
     state_idx = {s: _state_to_idx(s) for s in track}
-    times = np.zeros(n_steps + 1)
+    times = np.linspace(0, t_max, n_steps + 1)
     probs = {s: np.zeros(n_steps + 1) for s in track}
 
-    for s in track:
-        probs[s][0] = abs(sv[state_idx[s]]) ** 2
-
-    for step in range(1, n_steps + 1):
-        sv = U_mat @ sv
-        times[step] = step * dt
+    for ti, t in enumerate(times):
+        psi = evecs @ (np.exp(-1j * evals * t) * coeffs)
         for s in track:
-            probs[s][step] = abs(sv[state_idx[s]]) ** 2
+            probs[s][ti] = float(abs(psi[state_idx[s]]) ** 2)
 
     return times, probs
 
@@ -584,15 +610,24 @@ $q_1 = \text{site 1 }{\downarrow}$,
 $q_2 = \text{site 2 }{\uparrow}$,
 $q_3 = \text{site 2 }{\downarrow}$
 
-**Mapped Hamiltonian:**
-$$H = \frac{J}{2}\bigl[Z_1(X_0 X_2+Y_0 Y_2)+Z_2(X_1 X_3+Y_1 Y_3)\bigr]
+**Exact Hamiltonian (JW-mapped):**
+$$H = -\frac{J}{2}\bigl[Z_1(X_0 X_2+Y_0 Y_2)+Z_2(X_1 X_3+Y_1 Y_3)\bigr]
      +\frac{U}{4}\bigl[(I-Z_0-Z_1+Z_0 Z_1)+(I-Z_2-Z_3+Z_2 Z_3)\bigr]$$
 
-**Trotterization** (first order):
+**Simulation method:** Exact matrix exponentiation using the full JW Hamiltonian
+(Jordan-Wigner construction → 16×16 Hermitian matrix → eigendecomposition → $e^{-iHt}$).
+No Trotter error. The Trotter circuit below is shown for educational visualisation only.
+
+**Trotterization** (first order, circuit visualisation):
 $e^{-iH\tau}\approx e^{-iH_{\uparrow}\tau}\,e^{-iH_{\downarrow}\tau}\,e^{-iH_U\tau}$
 
 Each Pauli-string exponential $e^{-i\theta X_i Z_j X_k}$ is implemented with
 basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
+
+**Regime physics:**
+- **Metallic (U=0):** Free hopping; eigenvalue gap = $4J$; oscillation period $= \pi/(2J)$
+- **Mott (U≫J):** Effective coupling $\sim 4J^2/U$; period $\sim \pi U/(4J^2)$
+- **Key observable:** Virtual doublon/single-occupancy population suppressed as $(J/U)^2$
         """)
 
     left, right = st.columns([1, 2])
@@ -603,18 +638,23 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
         J      = st.slider("Hopping J", 0.0, 3.0, 1.0, 0.05, key="fh_J")
         U      = st.slider("Interaction U", 0.0, 20.0, 0.0, 0.5, key="fh_U")
 
-        # Suggest a sensible t_max: for |1100⟩ with U>0, effective rate is J²/U
-        if U > 0 and J > 0:
-            t_suggested = float(np.pi * U / J**2)   # one Mott oscillation
-        elif J > 0:
-            t_suggested = float(np.pi / (2 * J))    # free-hopping peak
+        # Half-period for first full oscillation:
+        # U=0: peak at t = π/(2·2J) = π/4 for |1001> case (eigenvalue gap = 4J)
+        # Large U: effective coupling 4J²/U, peak at t = π/(2·4J²/U) = πU/(8J²)
+        # Use a crossover formula that covers both limits
+        if J > 0:
+            gap_free = 4.0 * J            # free-hopping eigenvalue gap
+            gap_mott = 4.0 * J**2 / U if U > 0 else gap_free
+            gap = min(gap_free, gap_mott)  # smaller gap = longer period
+            t_half = float(np.pi / gap)    # half-period ≈ time of first peak
+            t_suggested = min(float(2.5 * t_half), 120.0)  # show ~2.5 oscillations
         else:
             t_suggested = float(np.pi)
 
         t_max  = float(st.slider("Max time τ_max", 0.1, 120.0,
-                                 min(t_suggested, 120.0),
+                                 t_suggested,
                                  0.5, format="%.1f", key="fh_t"))
-        n_steps = st.slider("Trotter steps", 20, 600, 150, 10, key="fh_n")
+        n_steps = st.slider("Trotter steps (display only)", 20, 600, 200, 10, key="fh_n")
 
         init = st.selectbox("Initial state", ["1000", "1100", "1001", "0101", "1010"],
                             key="fh_init")
@@ -628,22 +668,19 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
         st.info(info.get(init, ""))
 
         # Dynamic timescale guidance
-        if init == "1100" and J > 0:
-            t_rabi  = float(np.pi / (2 * J))
-            t_mott  = float(np.pi * U / (2 * J**2)) if U > 0 else t_rabi
-            if U / J > 2:
-                st.warning(
-                    f"⚠️ **Mott regime** (U/J = {U/J:.1f}):  \n"
-                    f"Doublon tunneling is suppressed and slow.  \n"
-                    f"Set **τ_max ≥ {t_mott:.1f}** to see the oscillation  \n"
-                    f"(effective rate ~ J²/U = {J**2/U:.3f})."
-                )
-        elif init in ("1001", "0101", "1010") and J > 0 and U > 0:
-            t_super = float(np.pi * U / (2 * J**2))
-            st.info(
-                f"ℹ️ Superexchange oscillation period ≈ **{t_super:.1f}** (πU/2J²).  \n"
-                f"Set τ_max ≥ {t_super:.1f} to see the full oscillation between single-occupancy states."
+        if init == "1100" and J > 0 and U / (J if J else 1) > 2:
+            st.warning(
+                f"⚠️ **Mott regime** (U/J = {U/J:.1f}):  \n"
+                f"Doublon tunnels slowly. Eigenvalue gap ≈ 4J²/U = {4*J**2/U:.3f}.  \n"
+                f"Peak at τ ≈ **{np.pi*U/(8*J**2):.1f}** (set τ_max accordingly)."
             )
+        elif init in ("1001", "0101", "1010") and J > 0 and U > 0:
+            if U / J > 2:
+                st.info(
+                    f"ℹ️ Single-occupancy spin-exchange (superexchange):  \n"
+                    f"Effective coupling 4J²/U = {4*J**2/U:.3f}.  \n"
+                    f"Peak at τ ≈ **{np.pi*U/(8*J**2):.1f}**."
+                )
 
         if init == "1000":
             track  = ["1000", "0010"]
