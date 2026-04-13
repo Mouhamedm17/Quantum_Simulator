@@ -253,9 +253,15 @@ def _pauli_exp_yzy(qc, i, j, k, theta):
 
 
 def fh_trotter_step(qc: QuantumCircuit, J: float, U: float, dt: float):
-    """Append one first-order Lie-Trotter step to qc (4 qubits)."""
-    tJ = J * dt / 2   # hopping angle
-    tU = U * dt / 4   # interaction angle
+    """Append one first-order Lie-Trotter step to qc (4 qubits).
+
+    H = -J/2 * [Z1(X0X2+Y0Y2) + Z2(X1X3+Y1Y3)]   (hopping, JW-mapped)
+      + U/4  * [(I-Z0-Z1+Z0Z1) + (I-Z2-Z3+Z2Z3)]  (on-site interaction)
+
+    e^{-i dt H_hop} requires e^{+i(J dt/2) PauliString}, so tJ = -J*dt/2.
+    """
+    tJ = -J * dt / 2   # negative: H_hop has coefficient -J/2, so propagator has +J/2
+    tU =  U * dt / 4   # interaction angle
 
     # --- spin-up hopping (q0 ↔ q2, Z-string through q1) ---
     _pauli_exp_xzx(qc, 0, 1, 2, tJ)
@@ -636,9 +642,15 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
             track  = ["1000", "0010"]
             labels = {"1000": "Site 1↑  |1000⟩", "0010": "Site 2↑  |0010⟩"}
         elif init == "1100":
-            track  = ["1100", "0011"]
-            labels = {"1100": "Doublon Site 1  |1100⟩",
-                      "0011": "Doublon Site 2  |0011⟩"}
+            # Track all 4 states in the N↑=1, N↓=1 sector.
+            # Mott physics shows as suppression of intermediate single-occupancy states.
+            track  = ["1100", "0011", "1001", "0110"]
+            labels = {
+                "1100": "Doublon site 1  |1100⟩",
+                "0011": "Doublon site 2  |0011⟩",
+                "1001": "Single-occ  |1001⟩ (↑s1, ↓s2)",
+                "0110": "Single-occ  |0110⟩ (↓s1, ↑s2)",
+            }
         else:
             track  = [init]
             labels = {init: f"|{init}⟩"}
@@ -713,27 +725,29 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                         )
 
                     elif init == "1100":
-                        pa_s1   = probs.get("1100", np.zeros(1))
                         pa_s2   = probs.get("0011", np.zeros(1))
+                        pa_int  = probs.get("1001", np.zeros(1)) + probs.get("0110", np.zeros(1))
                         max_s2  = float(np.max(pa_s2))
+                        max_int = float(np.max(pa_int))
                         ratio   = U / J if J > 0 else float("inf")
-                        st.metric("Max doublon tunneling probability", f"{max_s2:.4f}")
+                        st.metric("Max doublon tunneling  P(|0011⟩)", f"{max_s2:.4f}")
+                        st.metric("Max single-occ population  P(|1001⟩)+P(|0110⟩)", f"{max_int:.4f}")
                         st.metric("U/J ratio", f"{ratio:.2f}")
 
                         if ratio > 5:
                             t_eff = J**2 / U if U > 0 else 0
                             st.success(
                                 f"🔒 **Mott-insulator regime** (U/J = {ratio:.1f} ≫ 1)  \n"
-                                f"Coulomb blockade suppresses doublon tunneling.  \n"
-                                f"Effective tunneling rate: J²/U ≈ **{t_eff:.3f}** (vs J = {J:.2f} at U=0).  \n"
-                                f"Expected oscillation period: ~**{np.pi/t_eff:.1f}** — "
-                                f"increase τ_max to see it."
+                                f"The key signature is **suppression of the single-occupancy states** "
+                                f"(|1001⟩ and |0110⟩).  \n"
+                                f"Doublon tunneling requires virtual passage through these states — "
+                                f"the energy cost U blocks this pathway.  \n"
+                                f"Effective doublon hopping rate: J²/U ≈ **{t_eff:.3f}** (vs J={J:.2f} at U=0)."
                             )
                         elif ratio < 1:
-                            t_free = np.pi / (2 * J) if J > 0 else 0
                             st.success(
                                 f"🔓 **Metallic regime** (U/J = {ratio:.2f} ≪ 1)  \n"
-                                f"Free doublon tunneling — peak transfer at τ ≈ **{t_free:.2f}**."
+                                "Doublon tunnels freely via single-occupancy intermediate states."
                             )
                         else:
                             st.info(
