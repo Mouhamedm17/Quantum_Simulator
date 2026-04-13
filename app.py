@@ -616,19 +616,20 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                                  0.5, format="%.1f", key="fh_t"))
         n_steps = st.slider("Trotter steps", 20, 600, 150, 10, key="fh_n")
 
-        init = st.selectbox("Initial state", ["1000", "1100", "0101", "1010"],
+        init = st.selectbox("Initial state", ["1000", "1100", "1001", "0101", "1010"],
                             key="fh_init")
         info = {
             "1000": "Site 1↑ occupied  → Q3.2 (set U=0)",
-            "1100": "Site 1↑↓ occupied → Q3.3 (set U=10)",
-            "0101": "Site 1↓ + Site 2↓",
-            "1010": "Site 1↑ + Site 2↑",
+            "1100": "Site 1↑↓ occupied (doublon) → Q3.3 (set U=10)",
+            "1001": "↑ on site 1, ↓ on site 2 — single-occupancy (Mott ground state sector)",
+            "0101": "↓ on site 1, ↑ on site 2 — single-occupancy (Mott ground state sector)",
+            "1010": "↑ on site 1, ↑ on site 2 — same-spin, no on-site interaction",
         }
         st.info(info.get(init, ""))
 
         # Dynamic timescale guidance
         if init == "1100" and J > 0:
-            t_rabi  = float(np.pi / (2 * J))          # free-hopping peak
+            t_rabi  = float(np.pi / (2 * J))
             t_mott  = float(np.pi * U / (2 * J**2)) if U > 0 else t_rabi
             if U / J > 2:
                 st.warning(
@@ -637,6 +638,12 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                     f"Set **τ_max ≥ {t_mott:.1f}** to see the oscillation  \n"
                     f"(effective rate ~ J²/U = {J**2/U:.3f})."
                 )
+        elif init in ("1001", "0101", "1010") and J > 0 and U > 0:
+            t_super = float(np.pi * U / (2 * J**2))
+            st.info(
+                f"ℹ️ Superexchange oscillation period ≈ **{t_super:.1f}** (πU/2J²).  \n"
+                f"Set τ_max ≥ {t_super:.1f} to see the full oscillation between single-occupancy states."
+            )
 
         if init == "1000":
             track  = ["1000", "0010"]
@@ -650,6 +657,32 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                 "0011": "Doublon site 2  |0011⟩",
                 "1001": "Single-occ  |1001⟩ (↑s1, ↓s2)",
                 "0110": "Single-occ  |0110⟩ (↓s1, ↑s2)",
+            }
+        elif init == "1001":
+            # Single-occupancy sector: |1001> and |0110> are degenerate.
+            # They oscillate via virtual doublon states (superexchange, rate ~J²/U).
+            track  = ["1001", "0110", "1100", "0011"]
+            labels = {
+                "1001": "Single-occ  |1001⟩ (↑s1, ↓s2)  ← start",
+                "0110": "Single-occ  |0110⟩ (↓s1, ↑s2)",
+                "1100": "Virtual doublon site 1  |1100⟩",
+                "0011": "Virtual doublon site 2  |0011⟩",
+            }
+        elif init == "0101":
+            track  = ["0101", "1010", "1100", "0011"]
+            labels = {
+                "0101": "Single-occ  |0101⟩ (↓s1, ↑s2)  ← start",
+                "1010": "Single-occ  |1010⟩ (↑s1, ↓s2)",
+                "1100": "Virtual doublon site 1  |1100⟩",
+                "0011": "Virtual doublon site 2  |0011⟩",
+            }
+        elif init == "1010":
+            track  = ["1010", "0101", "1100", "0011"]
+            labels = {
+                "1010": "Single-occ  |1010⟩ (↑s1, ↓s2)  ← start",
+                "0101": "Single-occ  |0101⟩ (↓s1, ↑s2)",
+                "1100": "Virtual doublon site 1  |1100⟩",
+                "0011": "Virtual doublon site 2  |0011⟩",
             }
         else:
             track  = [init]
@@ -679,8 +712,10 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
 
                     colors = ["royalblue", "tomato", "forestgreen", "purple"]
 
-                    # For |1100> with large U, use two-panel layout
-                    if init == "1100" and U > 0:
+                    # Two-panel layout when small-population states need a zoom
+                    needs_zoom = (init == "1100" and U > 0) or \
+                                 (init in ("1001", "0101", "1010") and U > 0)
+                    if needs_zoom:
                         fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10, 8),
                                                        gridspec_kw={"height_ratios": [2, 1]})
                     else:
@@ -710,27 +745,33 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                     ax.legend(fontsize=10)
                     ax.grid(True, alpha=0.3)
 
-                    # Zoomed panel showing only single-occupancy states
+                    # Zoomed panel: for |1100> start show suppressed single-occ states;
+                    # for single-occ starts show virtual doublon states
                     if ax2 is not None:
-                        single_occ_states = ["1001", "0110"]
-                        soc = {s: colors[i+2] for i, s in enumerate(single_occ_states)}
-                        for s, col in soc.items():
+                        if init == "1100":
+                            zoom_states = ["1001", "0110"]
+                            zoom_colors = {s: colors[i+2] for i, s in enumerate(zoom_states)}
+                            zoom_title_suffix = "virtual single-occupancy states (suppressed by Mott blockade)"
+                        else:
+                            zoom_states = ["1100", "0011"]
+                            zoom_colors = {s: colors[i+2] for i, s in enumerate(zoom_states)}
+                            zoom_title_suffix = "virtual doublon states (suppressed by Coulomb energy U)"
+
+                        for s, col in zoom_colors.items():
                             if s in probs:
                                 ax2.plot(times, probs[s],
                                          label=labels.get(s, f"|{s}⟩"),
                                          color=col, lw=2)
-                        # set y-limit to slightly above the peak of single-occ states
-                        max_single = max(
-                            float(np.max(probs.get(s, [0]))) for s in single_occ_states
+                        max_zoom = max(
+                            float(np.max(probs.get(s, [0]))) for s in zoom_states
                         )
-                        y_top = max(max_single * 1.4, 0.02)
+                        y_top = max(max_zoom * 1.4, 0.02)
                         ax2.set_ylim(0, y_top)
                         ax2.set_xlabel("Time τ  (ħ/J)", fontsize=12)
                         ax2.set_ylabel("Probability", fontsize=12)
                         ax2.set_title(
-                            "Zoomed: single-occupancy states  "
-                            f"(peak = {max_single:.4f}  —  "
-                            f"{'suppressed by Mott blockade' if U/J > 2 else 'intermediate hopping states'})",
+                            f"Zoomed: {zoom_title_suffix}\n"
+                            f"(peak = {max_zoom:.4f})",
                             fontsize=11,
                         )
                         ax2.legend(fontsize=10)
