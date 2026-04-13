@@ -3,4 +3,5 @@ qiskit-aer>=0.14
 streamlit>=1.35
 matplotlib>=3.8
 numpy>=1.26
+scipy>=1.11
 pylatexenc
