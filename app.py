@@ -756,18 +756,18 @@ These degenerate pairs are shown as **dashed lines** in the plots.
                     colors     = ["royalblue", "tomato", "forestgreen", "purple"]
 
                     # Decide which states go in which panel
-                    if init == "1100" and U > 0:
+                    if init == "1100":
                         main_states = ["1100", "0011"]
                         zoom_states = ["1001", "0110"]
                         zoom_titles = [
-                            "Single-occ  |1001⟩  (Mott-suppressed)",
+                            "Single-occ  |1001⟩",
                             "Single-occ  |0110⟩  (= |1001⟩ by spin-flip symmetry)",
                         ]
-                    elif init in ("1001", "0101", "1010") and U > 0:
+                    elif init in ("1001", "0101", "1010"):
                         main_states = track[:2]
                         zoom_states = track[2:]
                         zoom_titles = [
-                            f"Virtual doublon  |{zoom_states[0]}⟩  (Coulomb-suppressed)",
+                            f"Virtual doublon  |{zoom_states[0]}⟩",
                             f"Virtual doublon  |{zoom_states[1]}⟩  (= |{zoom_states[0]}⟩ by site-exchange symmetry)",
                         ]
                     else:
