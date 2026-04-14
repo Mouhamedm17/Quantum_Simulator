@@ -753,35 +753,42 @@ These degenerate pairs are shown as **dashed lines** in the plots.
                 try:
                     times, probs = simulate_fh(J, U, t_max, n_steps, init, track)
 
-                    colors     = ["royalblue", "tomato",      "forestgreen", "purple"]
-                    linestyles = ["solid",     "solid",        "dashed",      "dashed"]
+                    colors     = ["royalblue", "tomato", "forestgreen", "purple"]
 
                     # Decide which states go in which panel
                     if init == "1100" and U > 0:
                         main_states = ["1100", "0011"]
                         zoom_states = ["1001", "0110"]
-                        zoom_label  = "Zoomed: virtual single-occupancy states (Mott-suppressed)"
+                        zoom_titles = [
+                            "Single-occ  |1001⟩  (Mott-suppressed)",
+                            "Single-occ  |0110⟩  (= |1001⟩ by spin-flip symmetry)",
+                        ]
                     elif init in ("1001", "0101", "1010") and U > 0:
                         main_states = track[:2]
                         zoom_states = track[2:]
-                        zoom_label  = "Zoomed: virtual doublon states (Coulomb-suppressed)"
+                        zoom_titles = [
+                            f"Virtual doublon  |{zoom_states[0]}⟩  (Coulomb-suppressed)",
+                            f"Virtual doublon  |{zoom_states[1]}⟩  (= |{zoom_states[0]}⟩ by site-exchange symmetry)",
+                        ]
                     else:
                         main_states = track
                         zoom_states = []
-                        zoom_label  = ""
+                        zoom_titles = []
 
                     needs_zoom = len(zoom_states) > 0
                     if needs_zoom:
-                        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10, 8),
-                                                       gridspec_kw={"height_ratios": [2, 1]})
+                        fig, (ax, ax2, ax3) = plt.subplots(
+                            3, 1, figsize=(10, 11),
+                            gridspec_kw={"height_ratios": [2, 1, 1]}
+                        )
                     else:
                         fig, ax = plt.subplots(figsize=(10, 5))
-                        ax2 = None
+                        ax2 = ax3 = None
 
-                    # Main panel — dashed lines for degenerate partners
-                    for s, col, ls in zip(main_states, colors, linestyles):
+                    # Main panel
+                    for s, col in zip(main_states, colors):
                         ax.plot(times, probs[s], label=labels.get(s, f"|{s}⟩"),
-                                color=col, lw=2, linestyle=ls)
+                                color=col, lw=2)
 
                     # π markers on main axis
                     for k in range(1, int(t_max / np.pi) + 2):
@@ -794,31 +801,30 @@ These degenerate pairs are shown as **dashed lines** in the plots.
                     ax.set_ylabel("Probability", fontsize=13)
                     ax.set_title(
                         f"Fermi-Hubbard dynamics  "
-                        f"(J={J:.2f},  U={U:.2f},  "
-                        f"{n_steps} Trotter steps)",
+                        f"(J={J:.2f},  U={U:.2f})",
                         fontsize=13, fontweight="bold",
                     )
                     ax.set_ylim(-0.05, 1.12)
                     ax.legend(fontsize=10)
                     ax.grid(True, alpha=0.3)
 
-                    # Zoomed panel: small-amplitude states with autoscaled y-axis
-                    if ax2 is not None:
-                        for s, col, ls in zip(zoom_states, colors[2:], linestyles[2:]):
-                            ax2.plot(times, probs[s],
-                                     label=labels.get(s, f"|{s}⟩"),
-                                     color=col, lw=2, linestyle=ls)
-                        max_zoom = max(float(np.max(probs[s])) for s in zoom_states)
-                        ax2.set_ylim(0, max(max_zoom * 1.4, 0.005))
-                        ax2.set_xlabel("Time τ  (ħ/J)", fontsize=12)
-                        ax2.set_ylabel("Probability", fontsize=12)
-                        ax2.set_title(f"{zoom_label}  (peak = {max_zoom:.4f})", fontsize=11)
-                        ax2.legend(fontsize=10)
-                        ax2.grid(True, alpha=0.3)
-                        for k in range(1, int(t_max / np.pi) + 2):
-                            xv = k * np.pi
-                            if xv <= t_max * 1.01:
-                                ax2.axvline(xv, color="gray", ls="--", lw=0.8, alpha=0.5)
+                    # Two separate zoomed panels — one per small state
+                    if needs_zoom:
+                        for ax_z, s, col, title in zip(
+                            [ax2, ax3], zoom_states, colors[2:], zoom_titles
+                        ):
+                            p = probs[s]
+                            ax_z.plot(times, p, color=col, lw=2)
+                            peak = float(np.max(p))
+                            ax_z.set_ylim(0, max(peak * 1.4, 0.005))
+                            ax_z.set_xlabel("Time τ  (ħ/J)", fontsize=12)
+                            ax_z.set_ylabel("Probability", fontsize=12)
+                            ax_z.set_title(f"{title}  —  peak = {peak:.4f}", fontsize=11)
+                            ax_z.grid(True, alpha=0.3)
+                            for k in range(1, int(t_max / np.pi) + 2):
+                                xv = k * np.pi
+                                if xv <= t_max * 1.01:
+                                    ax_z.axvline(xv, color="gray", ls="--", lw=0.8, alpha=0.5)
 
                     plt.tight_layout()
                     st.pyplot(fig)
