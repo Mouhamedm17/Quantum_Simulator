@@ -603,31 +603,41 @@ def _ui_fh():
     st.header("⚛️  Fermi-Hubbard Model  (2-site, 4 qubits)")
 
     with st.expander("📖  Physics & Mapping", expanded=False):
-        st.markdown(r"""
+        st.markdown("""
 **Qubit layout** (Jordan-Wigner):
-$q_0 = \text{site 1 }{\uparrow}$,
-$q_1 = \text{site 1 }{\downarrow}$,
-$q_2 = \text{site 2 }{\uparrow}$,
-$q_3 = \text{site 2 }{\downarrow}$
+q₀ = site 1 ↑,  q₁ = site 1 ↓,  q₂ = site 2 ↑,  q₃ = site 2 ↓
 
 **Exact Hamiltonian (JW-mapped):**
-$$H = -\frac{J}{2}\bigl[Z_1(X_0 X_2+Y_0 Y_2)+Z_2(X_1 X_3+Y_1 Y_3)\bigr]
-     +\frac{U}{4}\bigl[(I-Z_0-Z_1+Z_0 Z_1)+(I-Z_2-Z_3+Z_2 Z_3)\bigr]$$
+        """)
+        st.latex(r"""
+H = -\frac{J}{2}\Bigl[Z_1(X_0 X_2+Y_0 Y_2)+Z_2(X_1 X_3+Y_1 Y_3)\Bigr]
+  + \frac{U}{4}\Bigl[(I-Z_0-Z_1+Z_0 Z_1)+(I-Z_2-Z_3+Z_2 Z_3)\Bigr]
+        """)
+        st.markdown("""
+**Simulation method:** Exact matrix exponentiation — Jordan-Wigner construction gives
+the 16×16 Hermitian matrix H, which is diagonalised once; state evolves as
+        """)
+        st.latex(r"|\psi(t)\rangle = V\,\mathrm{diag}(e^{-i\varepsilon_k t})\,V^\dagger|\psi_0\rangle")
+        st.markdown("""
+No Trotter error. The circuit shown below is for educational visualisation only.
 
-**Simulation method:** Exact matrix exponentiation using the full JW Hamiltonian
-(Jordan-Wigner construction → 16×16 Hermitian matrix → eigendecomposition → $e^{-iHt}$).
-No Trotter error. The Trotter circuit below is shown for educational visualisation only.
+**First-order Trotterization** (circuit visualisation):
+        """)
+        st.latex(r"e^{-iH\tau}\approx e^{-iH_\uparrow\tau}\,e^{-iH_\downarrow\tau}\,e^{-iH_U\tau}")
+        st.markdown(r"""
+Each Pauli-string exponential is decomposed as basis-rotation gates + CNOT ladder + R_z(2θ).
 
-**Trotterization** (first order, circuit visualisation):
-$e^{-iH\tau}\approx e^{-iH_{\uparrow}\tau}\,e^{-iH_{\downarrow}\tau}\,e^{-iH_U\tau}$
+**Symmetry note:** The Hamiltonian has both spin-flip and site-exchange symmetry,
+so certain pairs of states always have identical populations:
+- From **|1100⟩** or **|0011⟩**: P(|1001⟩) = P(|0110⟩) at all times (spin-flip)
+- From **|1001⟩** or **|0110⟩**: P(|1100⟩) = P(|0011⟩) at all times (site-exchange)
 
-Each Pauli-string exponential $e^{-i\theta X_i Z_j X_k}$ is implemented with
-basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
+These degenerate pairs are shown as **dashed lines** in the plots.
 
 **Regime physics:**
-- **Metallic (U=0):** Free hopping; eigenvalue gap = $4J$; oscillation period $= \pi/(2J)$
-- **Mott (U≫J):** Effective coupling $\sim 4J^2/U$; period $\sim \pi U/(4J^2)$
-- **Key observable:** Virtual doublon/single-occupancy population suppressed as $(J/U)^2$
+- **Metallic (U=0):** Free hopping; eigenvalue gap = 4J; first peak at τ = π/(4J)
+- **Mott (U≫J):** Effective coupling ~ 4J²/U; first peak at τ ~ πU/(8J²)
+- **Virtual state population** suppressed as (J/U)²
         """)
 
     left, right = st.columns([1, 2])
@@ -686,40 +696,36 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
             track  = ["1000", "0010"]
             labels = {"1000": "Site 1↑  |1000⟩", "0010": "Site 2↑  |0010⟩"}
         elif init == "1100":
-            # Track all 4 states in the N↑=1, N↓=1 sector.
-            # Mott physics shows as suppression of intermediate single-occupancy states.
             track  = ["1100", "0011", "1001", "0110"]
             labels = {
-                "1100": "Doublon site 1  |1100⟩",
-                "0011": "Doublon site 2  |0011⟩",
-                "1001": "Single-occ  |1001⟩ (↑s1, ↓s2)",
-                "0110": "Single-occ  |0110⟩ (↓s1, ↑s2)",
+                "1100": "|1100⟩ doublon site 1  (solid)",
+                "0011": "|0011⟩ doublon site 2  (solid)",
+                "1001": "|1001⟩ single-occ  (dashed — exactly = |0110⟩ by symmetry)",
+                "0110": "|0110⟩ single-occ  (dashed — exactly = |1001⟩ by symmetry)",
             }
         elif init == "1001":
-            # Single-occupancy sector: |1001> and |0110> are degenerate.
-            # They oscillate via virtual doublon states (superexchange, rate ~J²/U).
             track  = ["1001", "0110", "1100", "0011"]
             labels = {
-                "1001": "Single-occ  |1001⟩ (↑s1, ↓s2)  ← start",
-                "0110": "Single-occ  |0110⟩ (↓s1, ↑s2)",
-                "1100": "Virtual doublon site 1  |1100⟩",
-                "0011": "Virtual doublon site 2  |0011⟩",
+                "1001": "|1001⟩ ← start  (solid)",
+                "0110": "|0110⟩  (solid)",
+                "1100": "|1100⟩ virtual doublon  (dashed — exactly = |0011⟩ by symmetry)",
+                "0011": "|0011⟩ virtual doublon  (dashed — exactly = |1100⟩ by symmetry)",
             }
         elif init == "0101":
             track  = ["0101", "1010", "1100", "0011"]
             labels = {
-                "0101": "Single-occ  |0101⟩ (↓s1, ↑s2)  ← start",
-                "1010": "Single-occ  |1010⟩ (↑s1, ↓s2)",
-                "1100": "Virtual doublon site 1  |1100⟩",
-                "0011": "Virtual doublon site 2  |0011⟩",
+                "0101": "|0101⟩ ← start  (solid)",
+                "1010": "|1010⟩  (solid)",
+                "1100": "|1100⟩ virtual doublon  (dashed — exactly = |0011⟩ by symmetry)",
+                "0011": "|0011⟩ virtual doublon  (dashed — exactly = |1100⟩ by symmetry)",
             }
         elif init == "1010":
             track  = ["1010", "0101", "1100", "0011"]
             labels = {
-                "1010": "Single-occ  |1010⟩ (↑s1, ↓s2)  ← start",
-                "0101": "Single-occ  |0101⟩ (↓s1, ↑s2)",
-                "1100": "Virtual doublon site 1  |1100⟩",
-                "0011": "Virtual doublon site 2  |0011⟩",
+                "1010": "|1010⟩ ← start  (solid)",
+                "0101": "|0101⟩  (solid)",
+                "1100": "|1100⟩ virtual doublon  (dashed — exactly = |0011⟩ by symmetry)",
+                "0011": "|0011⟩ virtual doublon  (dashed — exactly = |1100⟩ by symmetry)",
             }
         else:
             track  = [init]
@@ -747,7 +753,8 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                 try:
                     times, probs = simulate_fh(J, U, t_max, n_steps, init, track)
 
-                    colors = ["royalblue", "tomato", "forestgreen", "purple"]
+                    colors     = ["royalblue", "tomato",      "forestgreen", "purple"]
+                    linestyles = ["solid",     "solid",        "dashed",      "dashed"]
 
                     # Decide which states go in which panel
                     if init == "1100" and U > 0:
@@ -755,7 +762,6 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                         zoom_states = ["1001", "0110"]
                         zoom_label  = "Zoomed: virtual single-occupancy states (Mott-suppressed)"
                     elif init in ("1001", "0101", "1010") and U > 0:
-                        # first two in track are the large single-occ states
                         main_states = track[:2]
                         zoom_states = track[2:]
                         zoom_label  = "Zoomed: virtual doublon states (Coulomb-suppressed)"
@@ -772,10 +778,10 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                         fig, ax = plt.subplots(figsize=(10, 5))
                         ax2 = None
 
-                    # Main panel: large-amplitude states only
-                    for s, col in zip(main_states, colors):
+                    # Main panel — dashed lines for degenerate partners
+                    for s, col, ls in zip(main_states, colors, linestyles):
                         ax.plot(times, probs[s], label=labels.get(s, f"|{s}⟩"),
-                                color=col, lw=2)
+                                color=col, lw=2, linestyle=ls)
 
                     # π markers on main axis
                     for k in range(1, int(t_max / np.pi) + 2):
@@ -798,10 +804,10 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
 
                     # Zoomed panel: small-amplitude states with autoscaled y-axis
                     if ax2 is not None:
-                        for s, col in zip(zoom_states, colors[2:]):
+                        for s, col, ls in zip(zoom_states, colors[2:], linestyles[2:]):
                             ax2.plot(times, probs[s],
                                      label=labels.get(s, f"|{s}⟩"),
-                                     color=col, lw=2)
+                                     color=col, lw=2, linestyle=ls)
                         max_zoom = max(float(np.max(probs[s])) for s in zoom_states)
                         ax2.set_ylim(0, max(max_zoom * 1.4, 0.005))
                         ax2.set_xlabel("Time τ  (ħ/J)", fontsize=12)
