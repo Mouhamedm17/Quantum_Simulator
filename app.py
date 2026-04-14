@@ -749,9 +749,22 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
 
                     colors = ["royalblue", "tomato", "forestgreen", "purple"]
 
-                    # Two-panel layout when small-population states need a zoom
-                    needs_zoom = (init == "1100" and U > 0) or \
-                                 (init in ("1001", "0101", "1010") and U > 0)
+                    # Decide which states go in which panel
+                    if init == "1100" and U > 0:
+                        main_states = ["1100", "0011"]
+                        zoom_states = ["1001", "0110"]
+                        zoom_label  = "Zoomed: virtual single-occupancy states (Mott-suppressed)"
+                    elif init in ("1001", "0101", "1010") and U > 0:
+                        # first two in track are the large single-occ states
+                        main_states = track[:2]
+                        zoom_states = track[2:]
+                        zoom_label  = "Zoomed: virtual doublon states (Coulomb-suppressed)"
+                    else:
+                        main_states = track
+                        zoom_states = []
+                        zoom_label  = ""
+
+                    needs_zoom = len(zoom_states) > 0
                     if needs_zoom:
                         fig, (ax, ax2) = plt.subplots(2, 1, figsize=(10, 8),
                                                        gridspec_kw={"height_ratios": [2, 1]})
@@ -759,8 +772,9 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                         fig, ax = plt.subplots(figsize=(10, 5))
                         ax2 = None
 
-                    for (s, pa), col in zip(probs.items(), colors):
-                        ax.plot(times, pa, label=labels.get(s, f"|{s}⟩"),
+                    # Main panel: large-amplitude states only
+                    for s, col in zip(main_states, colors):
+                        ax.plot(times, probs[s], label=labels.get(s, f"|{s}⟩"),
                                 color=col, lw=2)
 
                     # π markers on main axis
@@ -782,35 +796,17 @@ basis-rotation gates + CNOT ladder + $R_z(2\theta)$.
                     ax.legend(fontsize=10)
                     ax.grid(True, alpha=0.3)
 
-                    # Zoomed panel: for |1100> start show suppressed single-occ states;
-                    # for single-occ starts show virtual doublon states
+                    # Zoomed panel: small-amplitude states with autoscaled y-axis
                     if ax2 is not None:
-                        if init == "1100":
-                            zoom_states = ["1001", "0110"]
-                            zoom_colors = {s: colors[i+2] for i, s in enumerate(zoom_states)}
-                            zoom_title_suffix = "virtual single-occupancy states (suppressed by Mott blockade)"
-                        else:
-                            zoom_states = ["1100", "0011"]
-                            zoom_colors = {s: colors[i+2] for i, s in enumerate(zoom_states)}
-                            zoom_title_suffix = "virtual doublon states (suppressed by Coulomb energy U)"
-
-                        for s, col in zoom_colors.items():
-                            if s in probs:
-                                ax2.plot(times, probs[s],
-                                         label=labels.get(s, f"|{s}⟩"),
-                                         color=col, lw=2)
-                        max_zoom = max(
-                            float(np.max(probs.get(s, [0]))) for s in zoom_states
-                        )
-                        y_top = max(max_zoom * 1.4, 0.02)
-                        ax2.set_ylim(0, y_top)
+                        for s, col in zip(zoom_states, colors[2:]):
+                            ax2.plot(times, probs[s],
+                                     label=labels.get(s, f"|{s}⟩"),
+                                     color=col, lw=2)
+                        max_zoom = max(float(np.max(probs[s])) for s in zoom_states)
+                        ax2.set_ylim(0, max(max_zoom * 1.4, 0.005))
                         ax2.set_xlabel("Time τ  (ħ/J)", fontsize=12)
                         ax2.set_ylabel("Probability", fontsize=12)
-                        ax2.set_title(
-                            f"Zoomed: {zoom_title_suffix}\n"
-                            f"(peak = {max_zoom:.4f})",
-                            fontsize=11,
-                        )
+                        ax2.set_title(f"{zoom_label}  (peak = {max_zoom:.4f})", fontsize=11)
                         ax2.legend(fontsize=10)
                         ax2.grid(True, alpha=0.3)
                         for k in range(1, int(t_max / np.pi) + 2):
